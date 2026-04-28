@@ -1,11 +1,16 @@
 """
-Reference implementations of the five tiered benchmark queries.
+Reference implementations of the five seed query shapes.
 
 These are the *correct* answers — the harness compares agent output against
 results from these functions on the same DuckDB database. They are written for
 clarity, not for the agent to read; spatially-naive solutions to the same
 question would, for instance, omit `geom_itm` (EPSG:2039) and use the lat/lon
 `geom` column for meter-based ST_DWithin, which is wrong by ~111 km/degree.
+
+Naming convention: `qN_*` and `QNResult`. Each `qN` is a *seed query shape*,
+not a difficulty tier. The benchmark's difficulty tiers (Lookup / Aggregate /
+Relational / Spatial / Multi-step) are an orthogonal axis defined in the
+Stage 2 question schema.
 """
 
 from typing import Final
@@ -19,7 +24,7 @@ DEFAULT_WALKING_DISTANCE_M: Final[float] = 400.0
 # ── Result models ────────────────────────────────────────────────────────────
 
 
-class Tier1Result(BaseModel):
+class Q1Result(BaseModel):
     """Number of distinct stops served by a route on any weekday (Mon-Fri)."""
 
     route_id: str
@@ -32,7 +37,7 @@ class StopWithDistance(BaseModel):
     distance_m: float
 
 
-class Tier2Result(BaseModel):
+class Q2Result(BaseModel):
     """Stops within `radius_m` of a query point."""
 
     stops: list[StopWithDistance]
@@ -44,7 +49,7 @@ class RoutePair(BaseModel):
     shared_stops: int
 
 
-class Tier3Result(BaseModel):
+class Q3Result(BaseModel):
     pairs: list[RoutePair]
 
 
@@ -53,12 +58,12 @@ class RouteAvgGap(BaseModel):
     avg_gap_m: float
 
 
-class Tier4Result(BaseModel):
+class Q4Result(BaseModel):
     routes: list[RouteAvgGap]
     used_shape_dist: bool
 
 
-class Tier5Result(BaseModel):
+class Q5Result(BaseModel):
     """Schedule-agnostic two-hop reachable stops from `origin_stop_id`.
 
     The intermediate connection can be made at the same physical stop or by
@@ -71,13 +76,13 @@ class Tier5Result(BaseModel):
     reachable_stop_ids: list[str]
 
 
-# ── Tier 1: tabular join ─────────────────────────────────────────────────────
+# ── Q1: tabular join ─────────────────────────────────────────────────────────
 
 
-def tier1_route_stops_on_weekdays(
+def q1_route_stops_on_weekdays(
     con: duckdb.DuckDBPyConnection,
     route_id: str,
-) -> Tier1Result:
+) -> Q1Result:
     n = con.execute(
         """
         SELECT COUNT(DISTINCT st.stop_id)
@@ -89,18 +94,18 @@ def tier1_route_stops_on_weekdays(
         """,
         [route_id],
     ).fetchall()[0][0]
-    return Tier1Result(route_id=route_id, n_stops=int(n))
+    return Q1Result(route_id=route_id, n_stops=int(n))
 
 
-# ── Tier 2: ST_DWithin in meters ─────────────────────────────────────────────
+# ── Q2: ST_DWithin in meters ─────────────────────────────────────────────────
 
 
-def tier2_stops_within_radius(
+def q2_stops_within_radius(
     con: duckdb.DuckDBPyConnection,
     lat: float,
     lon: float,
     radius_m: float,
-) -> Tier2Result:
+) -> Q2Result:
     rows = con.execute(
         """
         WITH q AS (
@@ -116,7 +121,7 @@ def tier2_stops_within_radius(
         """,
         [lon, lat, radius_m],
     ).fetchall()
-    return Tier2Result(
+    return Q2Result(
         stops=[
             StopWithDistance(stop_id=str(r[0]), stop_name=str(r[1]), distance_m=float(r[2]))
             for r in rows
@@ -124,13 +129,13 @@ def tier2_stops_within_radius(
     )
 
 
-# ── Tier 3: relational set intersection ──────────────────────────────────────
+# ── Q3: relational set intersection ──────────────────────────────────────────
 
 
-def tier3_route_pairs_sharing_stops(
+def q3_route_pairs_sharing_stops(
     con: duckdb.DuckDBPyConnection,
     limit: int = 20,
-) -> Tier3Result:
+) -> Q3Result:
     rows = con.execute(
         """
         WITH bridge AS (
@@ -153,21 +158,21 @@ def tier3_route_pairs_sharing_stops(
         """,
         [limit],
     ).fetchall()
-    return Tier3Result(
+    return Q3Result(
         pairs=[
             RoutePair(route_a=str(r[0]), route_b=str(r[1]), shared_stops=int(r[2])) for r in rows
         ]
     )
 
 
-# ── Tier 4: ordered ST_Distance over consecutive stops ───────────────────────
+# ── Q4: ordered ST_Distance over consecutive stops ───────────────────────────
 
 
-def tier4_route_consecutive_stop_gaps(
+def q4_route_consecutive_stop_gaps(
     con: duckdb.DuckDBPyConnection,
     use_shape_dist: bool,
     limit: int = 20,
-) -> Tier4Result:
+) -> Q4Result:
     if use_shape_dist:
         sql = """
             WITH legs AS (
@@ -206,20 +211,20 @@ def tier4_route_consecutive_stop_gaps(
             LIMIT ?
         """
     rows = con.execute(sql, [limit]).fetchall()
-    return Tier4Result(
+    return Q4Result(
         routes=[RouteAvgGap(route_id=str(r[0]), avg_gap_m=float(r[1])) for r in rows],
         used_shape_dist=use_shape_dist,
     )
 
 
-# ── Tier 5: schedule-agnostic two-hop reachability with walking ──────────────
+# ── Q5: schedule-agnostic two-hop reachability with walking ──────────────────
 
 
-def tier5_two_hop_reachable_with_walking(
+def q5_two_hop_reachable_with_walking(
     con: duckdb.DuckDBPyConnection,
     origin_stop_id: str,
     walking_distance_m: float = DEFAULT_WALKING_DISTANCE_M,
-) -> Tier5Result:
+) -> Q5Result:
     rows = con.execute(
         """
         WITH direct_from AS (
@@ -247,7 +252,7 @@ def tier5_two_hop_reachable_with_walking(
         """,
         [origin_stop_id, walking_distance_m, origin_stop_id],
     ).fetchall()
-    return Tier5Result(
+    return Q5Result(
         origin_stop_id=origin_stop_id,
         walking_distance_m=walking_distance_m,
         reachable_stop_ids=[str(r[0]) for r in rows],

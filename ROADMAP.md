@@ -49,13 +49,22 @@ Effort estimates assume part-time work (evenings / weekends). They are planning 
 **Acceptance**:
 - `benchmark/v1/questions.yaml` (or similar) with 50 entries.
 - Each entry has: question text (English), reference SQL, reference answer, difficulty tier, capability tags.
-- The 50 questions are distributed across 5 difficulty tiers:
+
+**Two orthogonal axes** — keep them separate:
+
+- **Difficulty tier** (one of five buckets, single-valued):
   1. **Lookup**: "How many bus stops are in Haifa?"
   2. **Aggregate**: "What is the median service frequency on line 5 between 7–9am?"
   3. **Relational join**: "Which operators run the most trips that end at rail stations?"
   4. **Spatial**: "Which neighborhoods have no bus stop within 300m?"
   5. **Multi-step reasoning**: "If line 142 were cancelled, how many trips per day would lose their only direct connection to a light-rail station?"
-- Capability tags include at minimum: `spatial_join`, `projection_aware`, `temporal_filter`, `set_reasoning`, `null_handling`, `ambiguity_resolution`.
+- **Capability tags** (multi-valued, what the question *probes*):
+  `spatial_join`, `projection_aware`, `temporal_filter`, `set_reasoning`, `walking_transfer`,
+  `null_handling`, `ambiguity_resolution`. A single Spatial-tier question can carry several tags.
+
+The `q1`..`q5` *seed query shapes* in `transitsqlbench/queries/reference.py` are not the same
+thing as difficulty tiers — they are five concrete query templates the benchmark questions are
+drawn from. Do not conflate the two vocabularies in the question file.
 
 **Scope boundary**:
 - Focus on SQL answer generation over a fixed transit analytics schema.

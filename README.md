@@ -1,12 +1,14 @@
 # TransitSQLBench
 
-**A benchmark and evaluation harness for SQL-generating transit analytics agents.**
+**A regression-evaluation harness for SQL agents on public-transit analytics, built around the spatial-SQL failure modes that ordinary text-to-SQL benchmarks can't expose.**
 
 Status: early-stage. Stage 1 data foundation is complete; Stage 2 benchmark curation is next.
 
 TransitSQLBench is deliberately narrower than a general GeoAI benchmark. It focuses on one
 question: when an LLM analytics agent writes SQL over production-scale public transit data, can
-we tell whether a change made it better or worse, especially on spatial SQL failure modes?
+we tell whether a change made it better or worse — especially on the spatial-SQL failure modes
+(projection awareness, ST_DWithin in meters, walking-distance transfers) that text-to-SQL
+benchmarks miss because their source datasets contain no spatial data?
 
 ---
 
@@ -60,7 +62,8 @@ and light rail. Stage 1 loads a pinned snapshot into DuckDB with:
 - WGS84 stop geometry for display
 - EPSG:2039 projected geometry for meter-based spatial queries
 - parsed GTFS time columns for service-day arithmetic
-- reference queries across five tiers
+- five reference seed queries (`q1`..`q5`) that exercise the join, set-reasoning, and spatial
+  shapes Stage 2 benchmark questions will be drawn from
 
 The current checked-in manifest pins the feed by URL, size, date, and SHA-256. The raw zip and
 DuckDB database are generated locally and intentionally not committed.

@@ -1,32 +1,53 @@
 """
-One-off: ask Haiku 4.5 to estimate Tier 5 graph reachability with no tools.
+Cold-LLM baseline grader for Q5 (schedule-agnostic two-hop reachability).
 
-Run with:
-    uv run --with anthropic python scripts/naive_llm_baseline.py
+Operates in two modes:
 
-Compares the model's free-form list against the SQL ground truth.
-This is exploratory; if/when we promote LLM agents to a permanent module
-(Stage 3), the patterns here move into transitsqlbench/agents/.
+  - default: load a saved baseline JSON from `baselines/` (no API spend) and
+    grade it against the current DuckDB ground truth, reporting both strict
+    and loose-subset name matches.
+  - --live: hit the Anthropic API with a real model (Haiku 4.5 by default),
+    save the response to `baselines/`, then grade.
+
+The point of this script is the *contrast* against the spatial-aware reference
+SQL: a generic LLM with no GTFS tools can name a few dozen central terminals
+and rail interchanges, but is off by ~2 orders of magnitude on the true
+reachable set (~12k distinct stop names). That's the headline finding the
+benchmark is built to make legible.
+
+Run:
+    uv run python scripts/naive_llm_baseline.py
+    uv run python scripts/naive_llm_baseline.py --baseline baselines/cold_subagent_2026-04-28.json
+    uv run --with anthropic python scripts/naive_llm_baseline.py --live
 """
 
+import argparse
 import json
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Final
 
-import anthropic
 import duckdb
 
-DB = Path(__file__).parent.parent / "data" / "transitsqlbench.duckdb"
-ORIGIN_STOP_ID = 22633  # Ben Gurion Airport Terminal 1
-WALKING_M = 400
-MODEL = "claude-haiku-4-5"
+REPO_ROOT: Final[Path] = Path(__file__).parent.parent
+DEFAULT_DB: Final[Path] = REPO_ROOT / "data" / "transitsqlbench.duckdb"
+DEFAULT_BASELINE: Final[Path] = REPO_ROOT / "baselines" / "cold_subagent_2026-04-28.json"
+ORIGIN_STOP_ID: Final[int] = 22633  # Ben Gurion Airport Terminal 1
+WALKING_M: Final[int] = 400
+LIVE_MODEL: Final[str] = "claude-haiku-4-5"
 
 
-def get_stop_name(con: duckdb.DuckDBPyConnection, stop_id: int) -> str:
-    row = con.execute("SELECT stop_name FROM stops WHERE stop_id = ?", [stop_id]).fetchone()
-    assert row is not None
-    return str(row[0])
+@dataclass
+class GradeResult:
+    listed_total: int
+    strict_hits: int
+    loose_hits: int
+    truth_name_count: int
+    estimate_count: int | None
+    listed_strict_misses: list[str]
+    listed_loose_misses: list[str]
 
 
 def get_truth_stop_names(
@@ -59,83 +80,131 @@ def get_truth_stop_names(
     return [str(r[0]) for r in rows]
 
 
-PROMPT_TEMPLATE = """You are a transit-routing assistant for the Israeli national bus network.
-
-Question: A passenger is starting at the bus stop "{origin_name}" (stop_id {origin_id}) at Ben Gurion International Airport.
-
-They will:
-  1. Ride from this stop to some downstream stop Y.
-  2. Optionally walk up to {walking_m} metres to a different stop Y'.
-  3. Ride from Y' to a final downstream stop Z.
-
-List the stops Z (by name, in Hebrew or English) that you believe are reachable this way.
-
-Return a JSON object with this exact shape — nothing else, no prose:
-{{"reachable_stop_names": ["stop name 1", "stop name 2", ...], "estimate_count": <integer>}}
-
-Be honest about uncertainty: if you don't actually know which routes serve this stop, say so by listing only what you're confident about. Do not invent specific stop names you have no basis for. The estimate_count is your best guess at the *true* number of distinct reachable stops, which may be larger than the list you can name."""
+def strict_match(listed: list[str], truth: set[str]) -> list[bool]:
+    """Exact (whitespace-normalized) string equality with the truth set."""
+    norm_truth = {t.strip() for t in truth}
+    return [n.strip() in norm_truth for n in listed]
 
 
-def ask_model(client: anthropic.Anthropic, origin_name: str) -> dict[str, object]:
+def loose_subset_match(listed: list[str], truth: set[str]) -> list[bool]:
+    """Loose match: a listed name `n` is a hit iff some truth name contains `n`
+    as a substring, or vice versa, after whitespace normalization. This forgives
+    bilingual variants and partial-name shortenings that the strict matcher
+    rejects, at the cost of false positives on very short listed names.
+    """
+    norm_truth = [t.strip() for t in truth]
+    hits: list[bool] = []
+    for n in listed:
+        ns = n.strip()
+        if not ns:
+            hits.append(False)
+            continue
+        hit = any(ns in t or t in ns for t in norm_truth)
+        hits.append(hit)
+    return hits
+
+
+def grade(
+    listed: list[str], truth_names: list[str], estimate_count: int | None
+) -> GradeResult:
+    truth_set = {t.strip() for t in truth_names}
+    strict = strict_match(listed, truth_set)
+    loose = loose_subset_match(listed, truth_set)
+    return GradeResult(
+        listed_total=len(listed),
+        strict_hits=sum(strict),
+        loose_hits=sum(loose),
+        truth_name_count=len(truth_set),
+        estimate_count=estimate_count,
+        listed_strict_misses=[n for n, h in zip(listed, strict, strict=True) if not h],
+        listed_loose_misses=[n for n, h in zip(listed, loose, strict=True) if not h],
+    )
+
+
+def load_baseline(path: Path) -> tuple[list[str], int | None]:
+    data = json.loads(path.read_text())
+    response = data["response"]
+    listed = [str(s) for s in response["reachable_stop_names"]]
+    estimate = response.get("estimate_count")
+    return listed, int(estimate) if estimate is not None else None
+
+
+def call_live_model() -> tuple[list[str], int | None]:  # pragma: no cover
+    import anthropic
+
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        raise RuntimeError("ANTHROPIC_API_KEY not set")
+
+    prompt = (
+        f"You are a transit-routing assistant for the Israeli national bus network.\n\n"
+        f'Question: A passenger is starting at "Ben Gurion Airport / Terminal 1" '
+        f"(stop_id {ORIGIN_STOP_ID}).\n\n"
+        f"They will:\n"
+        f"  1. Ride from this stop to some downstream stop Y.\n"
+        f"  2. Optionally walk up to {WALKING_M} metres to a different stop Y'.\n"
+        f"  3. Ride from Y' to a final downstream stop Z.\n\n"
+        f"Return ONLY this JSON: "
+        f'{{"reachable_stop_names": ["..."], "estimate_count": <int>}}'
+    )
+    client = anthropic.Anthropic()
     msg = client.messages.create(
-        model=MODEL,
+        model=LIVE_MODEL,
         max_tokens=4096,
-        messages=[
-            {
-                "role": "user",
-                "content": PROMPT_TEMPLATE.format(
-                    origin_name=origin_name,
-                    origin_id=ORIGIN_STOP_ID,
-                    walking_m=WALKING_M,
-                ),
-            }
-        ],
+        messages=[{"role": "user", "content": prompt}],
     )
     raw = msg.content[0].text  # type: ignore[union-attr]
-    # Strip markdown fences if present.
-    text = raw.strip()
-    if text.startswith("```"):
-        text = text.split("```")[1]
-        if text.startswith("json"):
-            text = text[4:]
-    return dict(json.loads(text))
+    text = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    parsed = json.loads(text)
+    listed = [str(s) for s in parsed.get("reachable_stop_names", [])]
+    estimate = parsed.get("estimate_count")
+    return listed, int(estimate) if estimate is not None else None
 
 
-def main() -> None:
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        print("ANTHROPIC_API_KEY not set", file=sys.stderr)
-        sys.exit(1)
-    if not DB.exists():
-        print(f"DuckDB not found at {DB}; run `make data` first.", file=sys.stderr)
-        sys.exit(1)
+def print_report(result: GradeResult) -> None:
+    print(f"Ground truth (SQL, walking-aware graph): {result.truth_name_count} distinct stop names")
+    print(f"Model listed:   {result.listed_total} names")
+    if result.estimate_count is not None:
+        print(f"Model estimate: {result.estimate_count} (true total: {result.truth_name_count})")
+    pct_strict = result.strict_hits / max(result.listed_total, 1) * 100
+    pct_loose = result.loose_hits / max(result.listed_total, 1) * 100
+    print(f"Strict matches: {result.strict_hits}/{result.listed_total} ({pct_strict:.0f}%)")
+    print(f"Loose matches:  {result.loose_hits}/{result.listed_total} ({pct_loose:.0f}%)")
+    print(
+        f"Recall vs truth (loose, by listed names only): "
+        f"{result.loose_hits}/{result.truth_name_count} "
+        f"= {result.loose_hits / max(result.truth_name_count, 1) * 100:.2f}%"
+    )
 
-    con = duckdb.connect(str(DB), read_only=True)
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--baseline", type=Path, default=DEFAULT_BASELINE)
+    parser.add_argument("--db", type=Path, default=DEFAULT_DB)
+    parser.add_argument("--live", action="store_true", help="hit the Anthropic API")
+    args = parser.parse_args(argv)
+
+    if not args.db.exists():
+        print(f"DuckDB not found at {args.db}; run `make data` first.", file=sys.stderr)
+        return 1
+
+    if args.live:
+        listed, estimate = call_live_model()  # pragma: no cover
+    else:
+        if not args.baseline.exists():
+            print(f"Baseline file not found: {args.baseline}", file=sys.stderr)
+            return 1
+        listed, estimate = load_baseline(args.baseline)
+        print(f"Loaded baseline: {args.baseline}")
+
+    con = duckdb.connect(str(args.db), read_only=True)
     con.execute("LOAD spatial;")
+    truth = get_truth_stop_names(con, ORIGIN_STOP_ID, WALKING_M)
+    con.close()
 
-    origin_name = get_stop_name(con, ORIGIN_STOP_ID)
-    truth_names = get_truth_stop_names(con, ORIGIN_STOP_ID, WALKING_M)
-    truth_set = {n.strip() for n in truth_names}
-    print(f"Origin: {origin_name} (stop_id {ORIGIN_STOP_ID})")
-    print(f"Ground truth (SQL, walking-aware graph): {len(truth_set)} distinct stop names\n")
-
-    client = anthropic.Anthropic()
-    print(f"Asking {MODEL} (no tools, no GTFS context)…\n")
-    answer = ask_model(client, origin_name)
-
-    listed = [str(s).strip() for s in answer.get("reachable_stop_names", [])]  # type: ignore[arg-type]
-    estimate = answer.get("estimate_count", "?")
-
-    overlap = [n for n in listed if n in truth_set]
-
-    print(f"Model estimate of total count: {estimate}")
-    print(f"Model listed:                 {len(listed)} names")
-    print(f"Of those, present in truth:   {len(overlap)} ({len(overlap) / max(len(listed), 1):.0%})")
-    print(f"True total:                   {len(truth_set)}")
-    print(f"\nFirst 10 names the model listed:")
-    for n in listed[:10]:
-        mark = "✓" if n in truth_set else "✗"
-        print(f"  {mark}  {n}")
+    result = grade(listed, truth, estimate)
+    print_report(result)
+    return 0
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

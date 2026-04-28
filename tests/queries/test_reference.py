@@ -1,7 +1,7 @@
 """Tests for transitsqlbench.queries.reference.
 
 Strategy: build a small synthetic GTFS zip, run load() to get a real DuckDB
-transitsqlbench database, then exercise each tier function against it. Distances
+transitsqlbench database, then exercise each seed query function against it. Distances
 are asserted with tolerance because they come out of the EPSG:2039 transform.
 """
 
@@ -14,11 +14,11 @@ import pytest
 
 from transitsqlbench.data.load import load
 from transitsqlbench.queries.reference import (
-    tier1_route_stops_on_weekdays,
-    tier2_stops_within_radius,
-    tier3_route_pairs_sharing_stops,
-    tier4_route_consecutive_stop_gaps,
-    tier5_two_hop_reachable_with_walking,
+    q1_route_stops_on_weekdays,
+    q2_stops_within_radius,
+    q3_route_pairs_sharing_stops,
+    q4_route_consecutive_stop_gaps,
+    q5_two_hop_reachable_with_walking,
 )
 
 # ── fixture geometry ─────────────────────────────────────────────────────────
@@ -30,7 +30,7 @@ from transitsqlbench.queries.reference import (
 #   s5 (32.020,  34.800)   ~1832 m north of s1, isolated
 #   s6 (32.000,  34.830)   ~1110 m east of s4
 #
-# The s2/s3 pair is the discriminating geometry for Tier 5 walking transfers.
+# The s2/s3 pair is the discriminating geometry for Q5 walking transfers.
 
 STOPS_CSV = (
     "stop_id,stop_name,stop_lat,stop_lon\n"
@@ -111,59 +111,59 @@ def db(tmp_path: Path) -> Generator[duckdb.DuckDBPyConnection, None, None]:
     con.close()
 
 
-# ── Tier 1 ───────────────────────────────────────────────────────────────────
+# ── Q1 ───────────────────────────────────────────────────────────────────
 
 
-def test_tier1_weekday_route(db: duckdb.DuckDBPyConnection) -> None:
-    r = tier1_route_stops_on_weekdays(db, "R1")
+def test_q1_weekday_route(db: duckdb.DuckDBPyConnection) -> None:
+    r = q1_route_stops_on_weekdays(db, "R1")
     assert r.route_id == "R1"
     assert r.n_stops == 2  # s1, s2
 
 
-def test_tier1_multi_stop_weekday_route(db: duckdb.DuckDBPyConnection) -> None:
-    r = tier1_route_stops_on_weekdays(db, "R4")
+def test_q1_multi_stop_weekday_route(db: duckdb.DuckDBPyConnection) -> None:
+    r = q1_route_stops_on_weekdays(db, "R4")
     assert r.n_stops == 3  # s1, s2, s4
 
 
-def test_tier1_weekend_only_route_returns_zero(db: duckdb.DuckDBPyConnection) -> None:
-    r = tier1_route_stops_on_weekdays(db, "R3")
+def test_q1_weekend_only_route_returns_zero(db: duckdb.DuckDBPyConnection) -> None:
+    r = q1_route_stops_on_weekdays(db, "R3")
     assert r.n_stops == 0
 
 
-def test_tier1_unknown_route(db: duckdb.DuckDBPyConnection) -> None:
-    r = tier1_route_stops_on_weekdays(db, "DOES_NOT_EXIST")
+def test_q1_unknown_route(db: duckdb.DuckDBPyConnection) -> None:
+    r = q1_route_stops_on_weekdays(db, "DOES_NOT_EXIST")
     assert r.n_stops == 0
 
 
-# ── Tier 2 ───────────────────────────────────────────────────────────────────
+# ── Q2 ───────────────────────────────────────────────────────────────────
 
 
-def test_tier2_tight_radius_returns_anchor_only(db: duckdb.DuckDBPyConnection) -> None:
-    r = tier2_stops_within_radius(db, lat=32.0000, lon=34.8000, radius_m=200.0)
+def test_q2_tight_radius_returns_anchor_only(db: duckdb.DuckDBPyConnection) -> None:
+    r = q2_stops_within_radius(db, lat=32.0000, lon=34.8000, radius_m=200.0)
     assert [s.stop_id for s in r.stops] == ["s1"]
     assert r.stops[0].distance_m == pytest.approx(0.0, abs=0.01)
 
 
-def test_tier2_picks_up_close_neighbour(db: duckdb.DuckDBPyConnection) -> None:
+def test_q2_picks_up_close_neighbour(db: duckdb.DuckDBPyConnection) -> None:
     # Query at s2's coordinates, 50 m radius. s3 is ~14 m away, others > 1 km.
-    r = tier2_stops_within_radius(db, lat=32.0000, lon=34.8100, radius_m=50.0)
+    r = q2_stops_within_radius(db, lat=32.0000, lon=34.8100, radius_m=50.0)
     ids = [s.stop_id for s in r.stops]
     assert ids == ["s2", "s3"]
     assert r.stops[0].distance_m == pytest.approx(0.0, abs=0.01)
     assert r.stops[1].distance_m == pytest.approx(14.4, abs=1.0)
 
 
-def test_tier2_radius_zero_returns_empty(db: duckdb.DuckDBPyConnection) -> None:
+def test_q2_radius_zero_returns_empty(db: duckdb.DuckDBPyConnection) -> None:
     # Query somewhere with nothing nearby.
-    r = tier2_stops_within_radius(db, lat=33.0, lon=35.0, radius_m=100.0)
+    r = q2_stops_within_radius(db, lat=33.0, lon=35.0, radius_m=100.0)
     assert r.stops == []
 
 
-# ── Tier 3 ───────────────────────────────────────────────────────────────────
+# ── Q3 ───────────────────────────────────────────────────────────────────
 
 
-def test_tier3_pairs_ranked_by_shared_stops(db: duckdb.DuckDBPyConnection) -> None:
-    r = tier3_route_pairs_sharing_stops(db, limit=10)
+def test_q3_pairs_ranked_by_shared_stops(db: duckdb.DuckDBPyConnection) -> None:
+    r = q3_route_pairs_sharing_stops(db, limit=10)
     pairs = [(p.route_a, p.route_b, p.shared_stops) for p in r.pairs]
     # Top pair: R1 & R4 share {s1, s2} = 2.
     assert pairs[0] == ("R1", "R4", 2)
@@ -176,17 +176,17 @@ def test_tier3_pairs_ranked_by_shared_stops(db: duckdb.DuckDBPyConnection) -> No
     ]
 
 
-def test_tier3_respects_limit(db: duckdb.DuckDBPyConnection) -> None:
-    r = tier3_route_pairs_sharing_stops(db, limit=1)
+def test_q3_respects_limit(db: duckdb.DuckDBPyConnection) -> None:
+    r = q3_route_pairs_sharing_stops(db, limit=1)
     assert len(r.pairs) == 1
     assert r.pairs[0].shared_stops == 2
 
 
-# ── Tier 4 ───────────────────────────────────────────────────────────────────
+# ── Q4 ───────────────────────────────────────────────────────────────────
 
 
-def test_tier4_straight_line_ranks_routes_by_avg_gap(db: duckdb.DuckDBPyConnection) -> None:
-    r = tier4_route_consecutive_stop_gaps(db, use_shape_dist=False, limit=10)
+def test_q4_straight_line_ranks_routes_by_avg_gap(db: duckdb.DuckDBPyConnection) -> None:
+    r = q4_route_consecutive_stop_gaps(db, use_shape_dist=False, limit=10)
     assert r.used_shape_dist is False
     routes = [g.route_id for g in r.routes]
     # R5 (~2210m) and R3 (~1832m) lead. R1 and R4 both average ~1110.6m so
@@ -204,7 +204,7 @@ def test_tier4_straight_line_ranks_routes_by_avg_gap(db: duckdb.DuckDBPyConnecti
     assert gaps["R2"] == pytest.approx(1099.5, abs=1)
 
 
-def test_tier4_with_shape_dist_uses_column(tmp_path: Path) -> None:
+def test_q4_with_shape_dist_uses_column(tmp_path: Path) -> None:
     # Minimal fixture with shape_dist_traveled populated.
     stop_times = (
         "trip_id,arrival_time,departure_time,stop_id,stop_sequence,shape_dist_traveled\n"
@@ -227,7 +227,7 @@ def test_tier4_with_shape_dist_uses_column(tmp_path: Path) -> None:
     con = duckdb.connect(str(db_path))
     con.execute("LOAD spatial;")
     try:
-        r = tier4_route_consecutive_stop_gaps(con, use_shape_dist=True, limit=5)
+        r = q4_route_consecutive_stop_gaps(con, use_shape_dist=True, limit=5)
     finally:
         con.close()
     assert r.used_shape_dist is True
@@ -237,37 +237,37 @@ def test_tier4_with_shape_dist_uses_column(tmp_path: Path) -> None:
     assert r.routes[0].avg_gap_m == pytest.approx(1250.0, abs=0.01)
 
 
-# ── Tier 5 ───────────────────────────────────────────────────────────────────
+# ── Q5 ───────────────────────────────────────────────────────────────────
 
 
-def test_tier5_walking_transfer_unlocks_extra_stop(db: duckdb.DuckDBPyConnection) -> None:
+def test_q5_walking_transfer_unlocks_extra_stop(db: duckdb.DuckDBPyConnection) -> None:
     # 400 m walking radius bridges s2↔s3, so a passenger on T1/T4 can walk to
     # s3 and board T2 (→ s4) or T5 (→ s6).
-    r = tier5_two_hop_reachable_with_walking(db, origin_stop_id="s1", walking_distance_m=400.0)
+    r = q5_two_hop_reachable_with_walking(db, origin_stop_id="s1", walking_distance_m=400.0)
     assert r.origin_stop_id == "s1"
     assert r.walking_distance_m == 400.0
     assert r.reachable_stop_ids == ["s4", "s6"]
 
 
-def test_tier5_naive_zero_walking_misses_walking_leg(db: duckdb.DuckDBPyConnection) -> None:
+def test_q5_naive_zero_walking_misses_walking_leg(db: duckdb.DuckDBPyConnection) -> None:
     # Same-stop-only transfers: cannot reach s6 because no trip from s2 reaches
     # it — only from s3. This is the *whole point* of the benchmark.
-    r = tier5_two_hop_reachable_with_walking(db, origin_stop_id="s1", walking_distance_m=1.0)
+    r = q5_two_hop_reachable_with_walking(db, origin_stop_id="s1", walking_distance_m=1.0)
     assert r.reachable_stop_ids == ["s4"]
 
 
-def test_tier5_unknown_origin_returns_empty(db: duckdb.DuckDBPyConnection) -> None:
-    r = tier5_two_hop_reachable_with_walking(db, origin_stop_id="DOES_NOT_EXIST")
+def test_q5_unknown_origin_returns_empty(db: duckdb.DuckDBPyConnection) -> None:
+    r = q5_two_hop_reachable_with_walking(db, origin_stop_id="DOES_NOT_EXIST")
     assert r.reachable_stop_ids == []
 
 
-def test_tier5_default_walking_distance(db: duckdb.DuckDBPyConnection) -> None:
+def test_q5_default_walking_distance(db: duckdb.DuckDBPyConnection) -> None:
     # Default 400 m matches the explicit-400 m result.
-    explicit = tier5_two_hop_reachable_with_walking(
+    explicit = q5_two_hop_reachable_with_walking(
         db,
         origin_stop_id="s1",
         walking_distance_m=400.0,
     )
-    default = tier5_two_hop_reachable_with_walking(db, origin_stop_id="s1")
+    default = q5_two_hop_reachable_with_walking(db, origin_stop_id="s1")
     assert default.reachable_stop_ids == explicit.reachable_stop_ids
     assert default.walking_distance_m == 400.0
