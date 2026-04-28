@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
+.coverage
+
+# Environment
+.env
+.env.local
+
+# Data — pinned by hash, not committed
+data/raw/
+data/cache/
+*.duckdb
+*.duckdb.wal
+*.sqlite
+*.sqlite-journal
+
+# Eval runs
+runs/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.claude/
+.idea/
+.vscode/
+*.swp
+
+# Private / local notes — never committed
+CLAUDE.md
+*.local.md
+NOTES.md
+notes/
