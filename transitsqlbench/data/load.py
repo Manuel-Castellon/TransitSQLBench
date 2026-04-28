@@ -2,8 +2,8 @@
 Load a GTFS zip into a DuckDB database with spatial indexing.
 
 Usage:
-    python -m spatialbench.data.load                              # use manifest defaults
-    python -m spatialbench.data.load --zip path/to.zip --db path/to.duckdb
+    python -m transitsqlbench.data.load                              # use manifest defaults
+    python -m transitsqlbench.data.load --zip path/to.zip --db path/to.duckdb
 """
 
 import argparse
@@ -15,9 +15,9 @@ from pathlib import Path
 import duckdb
 from pydantic import BaseModel
 
-from spatialbench.data.fetch import RAW_DIR, load_manifest
+from transitsqlbench.data.fetch import RAW_DIR, load_manifest
 
-DB_PATH = Path(__file__).parent.parent.parent / "data" / "spatialbench.duckdb"
+DB_PATH = Path(__file__).parent.parent.parent / "data" / "transitsqlbench.duckdb"
 
 REQUIRED_FILES: tuple[str, ...] = ("stops", "routes", "trips", "stop_times", "calendar")
 OPTIONAL_FILES: tuple[str, ...] = ("calendar_dates",)

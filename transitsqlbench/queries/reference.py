@@ -59,10 +59,11 @@ class Tier4Result(BaseModel):
 
 
 class Tier5Result(BaseModel):
-    """Stops reachable from `origin_stop_id` with exactly one transfer.
+    """Schedule-agnostic two-hop reachable stops from `origin_stop_id`.
 
-    A transfer is either remaining at the alighting stop (same-stop transfer)
-    or walking to any stop within `walking_distance_m`.
+    The intermediate connection can be made at the same physical stop or by
+    walking to any stop within `walking_distance_m`. This is graph reachability
+    over the feed, not a timetable-valid passenger itinerary.
     """
 
     origin_stop_id: str
@@ -211,10 +212,10 @@ def tier4_route_consecutive_stop_gaps(
     )
 
 
-# ── Tier 5: 2-hop reachability with walking transfers ────────────────────────
+# ── Tier 5: schedule-agnostic two-hop reachability with walking ──────────────
 
 
-def tier5_reachable_with_one_transfer(
+def tier5_two_hop_reachable_with_walking(
     con: duckdb.DuckDBPyConnection,
     origin_stop_id: str,
     walking_distance_m: float = DEFAULT_WALKING_DISTANCE_M,

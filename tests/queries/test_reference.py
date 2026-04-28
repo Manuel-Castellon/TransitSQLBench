@@ -1,7 +1,7 @@
-"""Tests for spatialbench.queries.reference.
+"""Tests for transitsqlbench.queries.reference.
 
 Strategy: build a small synthetic GTFS zip, run load() to get a real DuckDB
-spatialbench database, then exercise each tier function against it. Distances
+transitsqlbench database, then exercise each tier function against it. Distances
 are asserted with tolerance because they come out of the EPSG:2039 transform.
 """
 
@@ -12,13 +12,13 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from spatialbench.data.load import load
-from spatialbench.queries.reference import (
+from transitsqlbench.data.load import load
+from transitsqlbench.queries.reference import (
     tier1_route_stops_on_weekdays,
     tier2_stops_within_radius,
     tier3_route_pairs_sharing_stops,
     tier4_route_consecutive_stop_gaps,
-    tier5_reachable_with_one_transfer,
+    tier5_two_hop_reachable_with_walking,
 )
 
 # ── fixture geometry ─────────────────────────────────────────────────────────
@@ -243,7 +243,7 @@ def test_tier4_with_shape_dist_uses_column(tmp_path: Path) -> None:
 def test_tier5_walking_transfer_unlocks_extra_stop(db: duckdb.DuckDBPyConnection) -> None:
     # 400 m walking radius bridges s2↔s3, so a passenger on T1/T4 can walk to
     # s3 and board T2 (→ s4) or T5 (→ s6).
-    r = tier5_reachable_with_one_transfer(db, origin_stop_id="s1", walking_distance_m=400.0)
+    r = tier5_two_hop_reachable_with_walking(db, origin_stop_id="s1", walking_distance_m=400.0)
     assert r.origin_stop_id == "s1"
     assert r.walking_distance_m == 400.0
     assert r.reachable_stop_ids == ["s4", "s6"]
@@ -252,18 +252,22 @@ def test_tier5_walking_transfer_unlocks_extra_stop(db: duckdb.DuckDBPyConnection
 def test_tier5_naive_zero_walking_misses_walking_leg(db: duckdb.DuckDBPyConnection) -> None:
     # Same-stop-only transfers: cannot reach s6 because no trip from s2 reaches
     # it — only from s3. This is the *whole point* of the benchmark.
-    r = tier5_reachable_with_one_transfer(db, origin_stop_id="s1", walking_distance_m=1.0)
+    r = tier5_two_hop_reachable_with_walking(db, origin_stop_id="s1", walking_distance_m=1.0)
     assert r.reachable_stop_ids == ["s4"]
 
 
 def test_tier5_unknown_origin_returns_empty(db: duckdb.DuckDBPyConnection) -> None:
-    r = tier5_reachable_with_one_transfer(db, origin_stop_id="DOES_NOT_EXIST")
+    r = tier5_two_hop_reachable_with_walking(db, origin_stop_id="DOES_NOT_EXIST")
     assert r.reachable_stop_ids == []
 
 
 def test_tier5_default_walking_distance(db: duckdb.DuckDBPyConnection) -> None:
     # Default 400 m matches the explicit-400 m result.
-    explicit = tier5_reachable_with_one_transfer(db, origin_stop_id="s1", walking_distance_m=400.0)
-    default = tier5_reachable_with_one_transfer(db, origin_stop_id="s1")
+    explicit = tier5_two_hop_reachable_with_walking(
+        db,
+        origin_stop_id="s1",
+        walking_distance_m=400.0,
+    )
+    default = tier5_two_hop_reachable_with_walking(db, origin_stop_id="s1")
     assert default.reachable_stop_ids == explicit.reachable_stop_ids
     assert default.walking_distance_m == 400.0

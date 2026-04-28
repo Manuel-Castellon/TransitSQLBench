@@ -2,8 +2,8 @@
 Download and verify the GTFS feed.
 
 Usage:
-    python -m spatialbench.data.fetch          # verify existing file against manifest
-    python -m spatialbench.data.fetch --update # re-fetch, recompute hash, rewrite manifest
+    python -m transitsqlbench.data.fetch          # verify existing file against manifest
+    python -m transitsqlbench.data.fetch --update # re-fetch, recompute hash, rewrite manifest
 """
 
 import argparse

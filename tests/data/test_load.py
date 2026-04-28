@@ -1,4 +1,4 @@
-"""Tests for spatialbench.data.load."""
+"""Tests for transitsqlbench.data.load."""
 
 import zipfile
 from pathlib import Path
@@ -9,7 +9,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from spatialbench.data.load import (
+from transitsqlbench.data.load import (
     LoadError,
     LoadResult,
     load,
@@ -278,7 +278,7 @@ def test_load_is_idempotent_on_existing_db(tmp_path: Path) -> None:
 def test_load_uses_default_db_path_when_none(tmp_path: Path) -> None:
     zp = _make_zip(tmp_path, _full_gtfs())
     default = tmp_path / "default.duckdb"
-    with patch("spatialbench.data.load.DB_PATH", default):
+    with patch("transitsqlbench.data.load.DB_PATH", default):
         result = load(zp)
     assert result.db_path == default
     assert default.exists()
@@ -306,12 +306,12 @@ def test_main_uses_manifest_when_no_zip_arg(
     assert zp.exists()
     db = tmp_path / "out.duckdb"
 
-    from spatialbench.data.fetch import Manifest
+    from transitsqlbench.data.fetch import Manifest
 
     fake_manifest = Manifest(url="https://example.com/feed.zip", filename="feed.zip")
     with (
-        patch("spatialbench.data.load.load_manifest", return_value=fake_manifest),
-        patch("spatialbench.data.load.RAW_DIR", tmp_path),
+        patch("transitsqlbench.data.load.load_manifest", return_value=fake_manifest),
+        patch("transitsqlbench.data.load.RAW_DIR", tmp_path),
     ):
         main(["--db", str(db)])
 

@@ -1,4 +1,4 @@
-"""Tests for spatialbench.queries.cli."""
+"""Tests for transitsqlbench.queries.cli."""
 
 import zipfile
 from collections.abc import Generator
@@ -6,23 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from spatialbench.data.load import load
-from spatialbench.queries.cli import (
-    _print_tier2,
-    _print_tier3,
-    _print_tier4,
-    _print_tier5,
-    main,
-)
-from spatialbench.queries.reference import (
-    RouteAvgGap,
-    RoutePair,
-    StopWithDistance,
-    Tier2Result,
-    Tier3Result,
-    Tier4Result,
-    Tier5Result,
-)
 from tests.queries.test_reference import (
     CALENDAR_CSV,
     CALENDAR_DATES_CSV,
@@ -30,6 +13,23 @@ from tests.queries.test_reference import (
     STOP_TIMES_CSV,
     STOPS_CSV,
     TRIPS_CSV,
+)
+from transitsqlbench.data.load import load
+from transitsqlbench.queries.cli import (
+    _print_tier2,
+    _print_tier3,
+    _print_tier4,
+    _print_tier5,
+    main,
+)
+from transitsqlbench.queries.reference import (
+    RouteAvgGap,
+    RoutePair,
+    StopWithDistance,
+    Tier2Result,
+    Tier3Result,
+    Tier4Result,
+    Tier5Result,
 )
 
 

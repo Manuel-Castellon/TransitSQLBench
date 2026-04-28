@@ -1,99 +1,96 @@
-# SpatialBench
+# TransitSQLBench
 
-**A benchmark and evaluation harness for geospatial analytics agents, grounded in Israeli open transit data.**
+**A benchmark and evaluation harness for SQL-generating transit analytics agents.**
 
 Status: early-stage. Stage 1 data foundation is complete; Stage 2 benchmark curation is next.
 
+TransitSQLBench is deliberately narrower than a general GeoAI benchmark. It focuses on one
+question: when an LLM analytics agent writes SQL over production-scale public transit data, can
+we tell whether a change made it better or worse, especially on spatial SQL failure modes?
+
 ---
 
-## The problem
+## The Problem
 
-Teams are shipping LLM-powered analytics agents ("ask your data a question in English") into products at a remarkable pace. The agents answer business questions by generating SQL, calling tools, and summarizing results. When they work, they feel magical. When they fail, they fail *silently and confidently* — returning a number, a chart, and a paragraph of prose that looks right and isn't.
+Teams are shipping LLM-powered analytics agents that answer business questions by generating SQL,
+calling tools, and summarizing results. When they fail, they often fail silently: a plausible table,
+number, or explanation appears, but the query encoded the wrong semantics.
 
-Two specific pain points sit underneath that:
+Transit analytics is a useful stress test because even simple-sounding questions combine:
 
-### 1. Evaluation blindness
-Classic software has pytest. LLM agents have vibes. When a team changes a prompt, upgrades a model, or adds a new tool, they ship it because "it looked better on five examples the PM tried." Regressions are detected by users, in production, often weeks later. There is no pytest-equivalent that says *"this prompt change fixed 12 questions but broke 4, and here are the 4."*
+- GTFS joins across `routes`, `trips`, `stop_times`, calendars, and stops.
+- Spatial SQL in meters, where coordinate reference systems matter.
+- Temporal filters and GTFS service-day quirks such as times beyond 24:00:00.
+- Accessibility and transfer questions that require set reasoning, not just lookup.
 
-Building that harness is not hard in principle. It is tedious, opinionated, and nobody's 20% project. So most teams don't, and keep shipping blind.
+The project is the benchmark plus harness. The reference agent exists only to validate that the
+benchmark exposes real regressions and improvements.
 
-### 2. Geospatial reasoning is the LLM blind spot
-Off-the-shelf text-to-SQL agents handle *"top 10 customers by revenue"* fine. They fall apart on:
+## What This Is Not
 
-> *"Which bus stops in Tel Aviv are within 500m of a school but more than 1km from any light rail station, and how does their morning ridership compare to the city average?"*
+This project sits near several existing efforts, so the boundary is explicit:
 
-Spatial SQL (PostGIS, H3, geohashes, projections) is underrepresented in the training data that teaches LLMs to write SQL. Units and coordinate reference systems get silently ignored. Spatial joins are computationally and semantically different from relational joins. The existing text-to-SQL benchmarks (Spider, BIRD, WikiSQL) are overwhelmingly relational — a spatially-capable agent and a spatially-naive one score the same on them.
+- It is **not** a multimodal spatial cognition benchmark like SpatialBench or SpatialEval. There are
+  no image, path-tracing, or mental-rotation tasks.
+- It is **not** a database-engine performance benchmark like Apache Sedona SpatialBench. The goal is
+  agent answer quality, not query-engine throughput.
+- It is **not** a broad GIS workflow/code-generation benchmark like GeoAnalystBench or GeoAgentBench.
+  The target output is SQL over a fixed analytical schema, not arbitrary GIS scripts or tool chains.
+- It is **not** TransitGPT. TransitGPT shows that LLMs can answer GTFS questions by generating Python
+  against GTFS feeds. TransitSQLBench instead emphasizes SQL agents, regression evaluation, spatial
+  SQL semantics, and run-to-run diffing.
 
-### The gap this fills
+## The Approach
 
-There is no widely-used benchmark for *"how good is your analytics agent at spatial questions?"* and no widely-used harness for detecting regressions between agent versions on such questions. SpatialBench is both: a curated question set with ground-truth answers, plus the evaluation infrastructure to run any agent against it and diff two runs.
+Three pieces, built in order:
 
-## Who feels this pain
+1. **Benchmark questions**: curated natural-language transit analytics questions with reference SQL,
+   reference answers, difficulty tiers, and capability tags.
+2. **Reference agent**: a minimal SQL-generating agent that runs against the benchmark database and
+   produces answers plus execution traces.
+3. **Evaluation harness**: graders, run storage, and diff tooling to answer: which questions were
+   gained, regressed, or unchanged between two agent versions?
 
-- **Mobility companies** (Waze, Moovit, Via, Uber, Lyft) — internal data-science teams run spatial queries constantly, and some ship user-facing analytics agents built on top.
-- **Logistics and delivery** — routing, warehousing, service-area analysis.
-- **Urban planning and transit agencies** — accessibility studies, coverage gaps, equity analysis.
-- **GIS platforms** (ESRI, Mapbox, CARTO) — their customers increasingly ask "can your AI handle spatial?"
-- **Real estate analytics** — every query is implicitly spatial.
+## Data
 
-## The approach
+The core dataset is the Israeli Ministry of Transport GTFS feed: a national feed with buses, rail,
+and light rail. Stage 1 loads a pinned snapshot into DuckDB with:
 
-Three pieces, built in this order:
+- raw GTFS tables for stops, routes, trips, stop times, and calendars
+- WGS84 stop geometry for display
+- EPSG:2039 projected geometry for meter-based spatial queries
+- parsed GTFS time columns for service-day arithmetic
+- reference queries across five tiers
 
-1. **The benchmark**: ~50 questions (v1) over a single curated dataset, each with a reference SQL query, a reference answer, and difficulty + capability tags. This is the core contribution and most of the real work.
-2. **A reference agent**: a geospatial-native analytics agent built on the benchmark's dataset. Not the point of the project, but you need one to validate the benchmark.
-3. **The eval harness**: runs any agent over the benchmark, grades with pluggable graders (exact match, numeric tolerance, LLM-judge), stores runs with agent + prompt version, and surfaces regressions between runs.
-
-## Why Israeli transit data
-
-The core dataset is the [Israeli Ministry of Transport GTFS feed](https://www.gov.il/he/departments/general/gtfs_general_transit_feed_specifications) — one of the most complete national transit feeds in the world. Buses, rail, light rail, updated weekly.
-
-Joinable with:
-- **OpenStreetMap** — roads, POIs, amenities.
-- **Israeli CBS** — demographic data by statistical area, geocoded.
-- **Tel Aviv open data portal** — parking, bike share history, traffic counters.
-- **Israel Meteorological Service** — weather.
-
-This choice gives us real multi-source joins, genuine spatial complexity (not toy polygons), and a domain with authentic business questions. It is also a concrete, single-region dataset — deliberately narrower than "world-scale" to keep the benchmark tractable.
+The current checked-in manifest pins the feed by URL, size, date, and SHA-256. The raw zip and
+DuckDB database are generated locally and intentionally not committed.
 
 ## Scope
 
-### v1 (current)
-- One dataset: Israeli GTFS snapshot (pinned by date).
-- 50 benchmark questions across 5 difficulty tiers.
-- One reference agent (Claude + local Ollama fallback).
-- Eval harness with 3 graders, SQLite run storage.
-- Streamlit diff UI for comparing two runs.
-- Running locally in one command.
+### v1
 
-### v2 (only if v1 sings)
-- Scale benchmark to 200 questions, add OSM + CBS joins.
-- Train a small query-router classifier (the MLOps slice).
-- Publish benchmark + write up findings.
-- Infrastructure as code + containerized deploy to a cloud provider.
-- Multi-agent comparison (Claude vs GPT vs local models).
+- One dataset: Israeli GTFS snapshot.
+- 50 benchmark questions across transit SQL and spatial SQL difficulty tiers.
+- One reference SQL agent.
+- Evaluation harness with exact, numeric-tolerance, and semantic graders.
+- SQLite run storage and a lightweight diff UI.
 
-## Cost model
+### Later
 
-Designed to run on ~$0–100 total API spend across the full v1 build.
+- OSM and demographic joins.
+- More regions or agencies.
+- Query-router experiments.
+- Multi-agent or multi-model comparisons.
 
-| Tier | When | Rough cost |
-|---|---|---|
-| Local Ollama (Qwen / Llama) | Dev loop, fast iteration | Free |
-| Gemini Flash free tier | Eval runs during development | Free |
-| Claude Haiku 4.5 (with prompt caching) | "Real" eval runs, judge | Cents per run |
-| Claude Sonnet 4.6 | Final comparison runs only | Dollars per run |
-| Claude Opus 4.7 | Avoided unless experiment demands | — |
-
-## Status
+## Current Status
 
 - [x] Stage 0: Project scaffold and business case
-- [x] Stage 1: Data foundation (GTFS ingest → DuckDB)
-- [ ] Stage 2: Benchmark curation v1 (~50 questions) ← *you are here*
-- [ ] Stage 3: Reference agent (baseline loop)
+- [x] Stage 1: Data foundation (GTFS ingest to DuckDB)
+- [ ] Stage 2: Benchmark curation v1 (~50 questions)
+- [ ] Stage 3: Reference SQL agent
 - [ ] Stage 4: Evaluation harness
 - [ ] Stage 5: Diff UI
-- [ ] Stage 6: Writeup + first published finding
+- [ ] Stage 6: Writeup and findings
 
 See [ROADMAP.md](./ROADMAP.md) for detail.
 
@@ -104,3 +101,5 @@ make data
 make queries STOP=22633
 make check
 ```
+
+`make data` downloads/verifies the pinned GTFS feed and builds the local DuckDB database.

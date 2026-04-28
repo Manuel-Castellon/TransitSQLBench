@@ -1,13 +1,13 @@
 """
-CLI for poking at the reference queries against a loaded SpatialBench DuckDB.
+CLI for poking at the reference queries against a loaded TransitSQLBench DuckDB.
 
 Usage:
-    python -m spatialbench.queries.cli tier1 --route R1
-    python -m spatialbench.queries.cli tier2 --lat 32.0055 --lon 34.8854 --radius 500
-    python -m spatialbench.queries.cli tier3 [--limit 20]
-    python -m spatialbench.queries.cli tier4 [--shape-dist] [--limit 20]
-    python -m spatialbench.queries.cli tier5 --stop STOP_ID [--walking 400]
-    python -m spatialbench.queries.cli all   # demo run for Stage 1 acceptance
+    python -m transitsqlbench.queries.cli tier1 --route R1
+    python -m transitsqlbench.queries.cli tier2 --lat 32.0055 --lon 34.8854 --radius 500
+    python -m transitsqlbench.queries.cli tier3 [--limit 20]
+    python -m transitsqlbench.queries.cli tier4 [--shape-dist] [--limit 20]
+    python -m transitsqlbench.queries.cli tier5 --stop STOP_ID [--walking 400]
+    python -m transitsqlbench.queries.cli all   # demo run for Stage 1 acceptance
 
 This is exploratory tooling, not the Stage 5 Streamlit UI. It exists so we can
 get a feel for the answers (and the failure modes) before building anything
@@ -20,8 +20,8 @@ from pathlib import Path
 
 import duckdb
 
-from spatialbench.data.load import DB_PATH
-from spatialbench.queries.reference import (
+from transitsqlbench.data.load import DB_PATH
+from transitsqlbench.queries.reference import (
     DEFAULT_WALKING_DISTANCE_M,
     Tier1Result,
     Tier2Result,
@@ -32,7 +32,7 @@ from spatialbench.queries.reference import (
     tier2_stops_within_radius,
     tier3_route_pairs_sharing_stops,
     tier4_route_consecutive_stop_gaps,
-    tier5_reachable_with_one_transfer,
+    tier5_two_hop_reachable_with_walking,
 )
 
 
@@ -85,8 +85,8 @@ def _print_tier4(r: Tier4Result) -> None:
 
 def _print_tier5(r: Tier5Result) -> None:
     print(
-        f"From stop {r.origin_stop_id}, with walking ≤ {r.walking_distance_m:g} m, "
-        f"{len(r.reachable_stop_ids)} stops reachable in one transfer:"
+        f"From stop {r.origin_stop_id}, with walking <= {r.walking_distance_m:g} m, "
+        f"{len(r.reachable_stop_ids)} stops reachable by schedule-agnostic two-hop search:"
     )
     if not r.reachable_stop_ids:
         print("  (none)")
@@ -118,7 +118,7 @@ def _cmd_tier4(con: duckdb.DuckDBPyConnection, args: argparse.Namespace) -> None
 
 def _cmd_tier5(con: duckdb.DuckDBPyConnection, args: argparse.Namespace) -> None:
     _print_tier5(
-        tier5_reachable_with_one_transfer(
+        tier5_two_hop_reachable_with_walking(
             con, origin_stop_id=args.stop, walking_distance_m=args.walking
         )
     )
@@ -141,9 +141,9 @@ def _cmd_all(con: duckdb.DuckDBPyConnection, args: argparse.Namespace) -> None:
         tier4_route_consecutive_stop_gaps(con, use_shape_dist=args.shape_dist, limit=args.limit)
     )
     print()
-    print("── Tier 5: stops reachable in one transfer ──")
+    print("── Tier 5: schedule-agnostic two-hop reachability ──")
     _print_tier5(
-        tier5_reachable_with_one_transfer(
+        tier5_two_hop_reachable_with_walking(
             con, origin_stop_id=args.stop, walking_distance_m=args.walking
         )
     )
@@ -153,8 +153,8 @@ def _cmd_all(con: duckdb.DuckDBPyConnection, args: argparse.Namespace) -> None:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="spatialbench-queries")
-    parser.add_argument("--db", type=Path, default=DB_PATH, help="path to spatialbench.duckdb")
+    parser = argparse.ArgumentParser(prog="transitsqlbench-queries")
+    parser.add_argument("--db", type=Path, default=DB_PATH, help="path to transitsqlbench.duckdb")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p1 = sub.add_parser("tier1", help="route → distinct stops on weekdays")
@@ -180,7 +180,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p4.add_argument("--limit", type=int, default=20)
     p4.set_defaults(handler=_cmd_tier4)
 
-    p5 = sub.add_parser("tier5", help="stops reachable from a given stop in one transfer")
+    p5 = sub.add_parser(
+        "tier5",
+        help="schedule-agnostic two-hop reachable stops with walking transfers",
+    )
     p5.add_argument("--stop", required=True, help="origin stop_id")
     p5.add_argument(
         "--walking",

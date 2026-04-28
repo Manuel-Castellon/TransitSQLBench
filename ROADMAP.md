@@ -1,4 +1,4 @@
-# SpatialBench Roadmap
+# TransitSQLBench Roadmap
 
 A staged build. Each stage has a clear goal, an acceptance criterion that proves it's done, the key decisions that stage forces, and what gets deliberately deferred. Stages are sequential — later stages depend on earlier ones.
 
@@ -57,6 +57,12 @@ Effort estimates assume part-time work (evenings / weekends). They are planning 
   5. **Multi-step reasoning**: "If line 142 were cancelled, how many trips per day would lose their only direct connection to a light-rail station?"
 - Capability tags include at minimum: `spatial_join`, `projection_aware`, `temporal_filter`, `set_reasoning`, `null_handling`, `ambiguity_resolution`.
 
+**Scope boundary**:
+- Focus on SQL answer generation over a fixed transit analytics schema.
+- Do not drift into general GIS workflow/code generation; GeoAnalystBench and GeoAgentBench already cover that neighborhood.
+- Do not drift into generic visual/spatial cognition; SpatialEval and SpatialBench already cover that neighborhood.
+- Do not duplicate TransitGPT's core claim that LLMs can answer GTFS questions by generating Python. Our benchmark should isolate SQL-agent behavior, spatial SQL semantics, and regression detection.
+
 **Key decisions**:
 - Schema for the question file (versioning matters — benchmark will evolve).
 - How to encode "reference answer" when the answer is a list or a chart, not a scalar.
@@ -75,7 +81,7 @@ Effort estimates assume part-time work (evenings / weekends). They are planning 
 **Goal**: A minimum-viable agent that, given a question and the GTFS schema, attempts to produce an answer. It will be bad at many questions. That is fine and in fact necessary — we need failure modes to validate the benchmark.
 
 **Acceptance**:
-- `spatialbench agent run "question"` returns an answer + the SQL it ran + a trace of tool calls.
+- `transitsqlbench agent run "question"` returns an answer + the SQL it ran + a trace of tool calls.
 - Agent loop: inspect-schema → generate-SQL → execute → summarize, with at most one retry on SQL failure.
 - Works against both a local Ollama model and the Anthropic API, toggled by config.
 - Trace is structured JSON so Stage 4 can grade it.
@@ -97,7 +103,7 @@ Effort estimates assume part-time work (evenings / weekends). They are planning 
 **Goal**: Run the agent over the full benchmark, grade each result, and store the run. This is the *actual* contribution of the project.
 
 **Acceptance**:
-- `spatialbench eval run --agent <version>` runs the full benchmark and writes a row per question to SQLite.
+- `transitsqlbench eval run --agent <version>` runs the full benchmark and writes a row per question to SQLite.
 - Three graders, each pluggable:
   1. **Exact match** — for scalar answers.
   2. **Numeric tolerance** — for aggregates where the agent's grouping may differ slightly.

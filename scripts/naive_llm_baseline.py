@@ -1,12 +1,12 @@
 """
-One-off: ask Haiku 4.5 to estimate Tier 5 reachability with no tools.
+One-off: ask Haiku 4.5 to estimate Tier 5 graph reachability with no tools.
 
 Run with:
     uv run --with anthropic python scripts/naive_llm_baseline.py
 
 Compares the model's free-form list against the SQL ground truth.
 This is exploratory; if/when we promote LLM agents to a permanent module
-(Stage 3), the patterns here move into spatialbench/agents/.
+(Stage 3), the patterns here move into transitsqlbench/agents/.
 """
 
 import json
@@ -17,7 +17,7 @@ from pathlib import Path
 import anthropic
 import duckdb
 
-DB = Path(__file__).parent.parent / "data" / "spatialbench.duckdb"
+DB = Path(__file__).parent.parent / "data" / "transitsqlbench.duckdb"
 ORIGIN_STOP_ID = 22633  # Ben Gurion Airport Terminal 1
 WALKING_M = 400
 MODEL = "claude-haiku-4-5"
@@ -64,9 +64,9 @@ PROMPT_TEMPLATE = """You are a transit-routing assistant for the Israeli nationa
 Question: A passenger is starting at the bus stop "{origin_name}" (stop_id {origin_id}) at Ben Gurion International Airport.
 
 They will:
-  1. Take exactly one bus from this stop to some other stop Y.
+  1. Ride from this stop to some downstream stop Y.
   2. Optionally walk up to {walking_m} metres to a different stop Y'.
-  3. Take exactly one more bus from Y' to a final stop Z.
+  3. Ride from Y' to a final downstream stop Z.
 
 List the stops Z (by name, in Hebrew or English) that you believe are reachable this way.
 
@@ -116,7 +116,7 @@ def main() -> None:
     truth_names = get_truth_stop_names(con, ORIGIN_STOP_ID, WALKING_M)
     truth_set = {n.strip() for n in truth_names}
     print(f"Origin: {origin_name} (stop_id {ORIGIN_STOP_ID})")
-    print(f"Ground truth (SQL, spatial-aware): {len(truth_set)} distinct stop names\n")
+    print(f"Ground truth (SQL, walking-aware graph): {len(truth_set)} distinct stop names\n")
 
     client = anthropic.Anthropic()
     print(f"Asking {MODEL} (no tools, no GTFS context)…\n")

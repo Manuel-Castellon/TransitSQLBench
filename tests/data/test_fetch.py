@@ -1,4 +1,4 @@
-"""Tests for spatialbench.data.fetch."""
+"""Tests for transitsqlbench.data.fetch."""
 
 import hashlib
 from datetime import date
@@ -10,7 +10,7 @@ import requests
 import yaml
 from pydantic import ValidationError
 
-from spatialbench.data.fetch import (
+from transitsqlbench.data.fetch import (
     HashMismatchError,
     Manifest,
     _download,
@@ -140,14 +140,14 @@ def test_load_manifest_nullable_fields(tmp_path: Path) -> None:
 def test_download_creates_dirs_and_writes(tmp_path: Path) -> None:
     dest = tmp_path / "sub" / "feed.zip"
     content = b"fake zip content"
-    with patch("spatialbench.data.fetch.requests.get", return_value=_mock_cm([content])):
+    with patch("transitsqlbench.data.fetch.requests.get", return_value=_mock_cm([content])):
         _download("https://example.com/feed.zip", dest)
     assert dest.read_bytes() == content
 
 
 def test_download_handles_empty_body(tmp_path: Path) -> None:
     dest = tmp_path / "feed.zip"
-    with patch("spatialbench.data.fetch.requests.get", return_value=_mock_cm([])):
+    with patch("transitsqlbench.data.fetch.requests.get", return_value=_mock_cm([])):
         _download("https://example.com/feed.zip", dest)
     assert dest.read_bytes() == b""
 
@@ -156,7 +156,7 @@ def test_download_raises_on_http_error(tmp_path: Path) -> None:
     dest = tmp_path / "feed.zip"
     with (
         patch(
-            "spatialbench.data.fetch.requests.get",
+            "transitsqlbench.data.fetch.requests.get",
             return_value=_mock_cm([], raise_http_error=True),
         ),
         pytest.raises(requests.HTTPError),
@@ -176,7 +176,7 @@ def test_fetch_downloads_missing_file(tmp_path: Path) -> None:
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(content)
 
-    with patch("spatialbench.data.fetch._download", side_effect=fake_download):
+    with patch("transitsqlbench.data.fetch._download", side_effect=fake_download):
         result = fetch(manifest_path=manifest_path, raw_dir=tmp_path)
 
     assert result == tmp_path / "feed.zip"
@@ -197,7 +197,7 @@ def test_fetch_re_downloads_on_update(tmp_path: Path) -> None:
     def fake_download(url: str, dest: Path) -> None:
         dest.write_bytes(content_after)
 
-    with patch("spatialbench.data.fetch._download", side_effect=fake_download):
+    with patch("transitsqlbench.data.fetch._download", side_effect=fake_download):
         fetch(update=True, manifest_path=manifest_path, raw_dir=tmp_path)
 
     assert load_manifest(manifest_path).sha256 == hashlib.sha256(content_after).hexdigest()
@@ -249,13 +249,13 @@ def test_fetch_raises_on_hash_mismatch(tmp_path: Path) -> None:
 
 
 def test_main_calls_fetch_without_update() -> None:
-    with patch("spatialbench.data.fetch.fetch") as mock_fetch:
+    with patch("transitsqlbench.data.fetch.fetch") as mock_fetch:
         main([])
     mock_fetch.assert_called_once_with(update=False)
 
 
 def test_main_calls_fetch_with_update() -> None:
-    with patch("spatialbench.data.fetch.fetch") as mock_fetch:
+    with patch("transitsqlbench.data.fetch.fetch") as mock_fetch:
         main(["--update"])
     mock_fetch.assert_called_once_with(update=True)
 
@@ -263,7 +263,7 @@ def test_main_calls_fetch_with_update() -> None:
 def test_main_exits_on_hash_mismatch(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     err = HashMismatchError(tmp_path / "feed.zip", "aaa", "bbb")
     with (
-        patch("spatialbench.data.fetch.fetch", side_effect=err),
+        patch("transitsqlbench.data.fetch.fetch", side_effect=err),
         pytest.raises(SystemExit) as exc_info,
     ):
         main([])
