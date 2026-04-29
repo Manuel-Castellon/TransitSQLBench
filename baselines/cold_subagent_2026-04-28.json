@@ -24,7 +24,7 @@
   "ground_truth_from_sql": {
     "distinct_reachable_stop_names": 12079,
     "distinct_reachable_stop_ids": 14433,
-    "note": "Computed from the same DuckDB snapshot via the q5 SQL with EPSG:2039 ST_DWithin walking transfers."
+    "note": "Computed from the same DuckDB snapshot via the q5 SQL with EPSG:2039 ST_DWithin walking transfers. Same-trip continuation excluded (second leg must use a different trip_id)."
   },
   "prompt": "You are participating in a controlled benchmark experiment for the TransitSQLBench project. The goal is to measure what a generic LLM, with NO tools and NO access to GTFS data, will produce when asked a transit-reachability question.\n\nA passenger is starting at the bus stop \"שדה תעופה בן גוריון/טרמינל 1\" (English: \"Ben Gurion Airport / Terminal 1\", stop_id 22633) at Ben Gurion International Airport in Israel.\n\nThey will:\n  1. Ride from this stop to some downstream stop Y.\n  2. Optionally walk up to 400 metres to a different stop Y'.\n  3. Ride from Y' to a final downstream stop Z.\n\nList the stops Z (by name, in Hebrew or English — use whatever your training data has) that you believe are reachable this way over the Israeli national bus network.\n\nReturn EXACTLY this JSON shape:\n{\"reachable_stop_names\": [\"...\"], \"estimate_count\": <integer>, \"self_assessed_confidence\": \"<one short phrase>\"}",
   "response": {

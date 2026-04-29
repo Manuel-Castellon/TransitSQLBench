@@ -66,9 +66,16 @@ class Q4Result(BaseModel):
 class Q5Result(BaseModel):
     """Schedule-agnostic two-hop reachable stops from `origin_stop_id`.
 
-    The intermediate connection can be made at the same physical stop or by
-    walking to any stop within `walking_distance_m`. This is graph reachability
-    over the feed, not a timetable-valid passenger itinerary.
+    Semantics:
+      - First leg: any trip departing the origin stop.
+      - Transfer: stay at the alighting stop OR walk up to `walking_distance_m`
+        to any other stop.
+      - Second leg: any trip serving the transfer stop, *required to be a
+        different trip than the first leg* — same-trip continuation does not
+        count as two hops.
+
+    This is graph reachability over the feed, not a timetable-valid passenger
+    itinerary (no service-day or arrival/departure-time compatibility check).
     """
 
     origin_stop_id: str
@@ -227,8 +234,8 @@ def q5_two_hop_reachable_with_walking(
 ) -> Q5Result:
     rows = con.execute(
         """
-        WITH direct_from AS (
-            SELECT DISTINCT b.stop_id AS dest
+        WITH first_leg AS (
+            SELECT DISTINCT a.trip_id AS trip1, b.stop_id AS alight_stop
             FROM stop_times a
             JOIN stop_times b
               ON a.trip_id = b.trip_id
@@ -236,18 +243,19 @@ def q5_two_hop_reachable_with_walking(
             WHERE CAST(a.stop_id AS VARCHAR) = ?
         ),
         transfer_pool AS (
-            SELECT DISTINCT t.stop_id AS via
-            FROM direct_from df
-            JOIN stops sa ON sa.stop_id = df.dest
+            SELECT DISTINCT fl.trip1, t.stop_id AS via_stop
+            FROM first_leg fl
+            JOIN stops sa ON sa.stop_id = fl.alight_stop
             JOIN stops t  ON ST_DWithin(t.geom_itm, sa.geom_itm, ?)
         )
         SELECT DISTINCT CAST(b.stop_id AS VARCHAR) AS reachable
         FROM transfer_pool tp
-        JOIN stop_times a ON a.stop_id = tp.via
+        JOIN stop_times a ON a.stop_id = tp.via_stop
         JOIN stop_times b
           ON b.trip_id = a.trip_id
          AND b.stop_sequence > a.stop_sequence
         WHERE CAST(b.stop_id AS VARCHAR) != ?
+          AND a.trip_id != tp.trip1
         ORDER BY reachable
         """,
         [origin_stop_id, walking_distance_m, origin_stop_id],

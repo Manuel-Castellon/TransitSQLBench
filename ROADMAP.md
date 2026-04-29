@@ -44,26 +44,26 @@ Effort estimates assume part-time work (evenings / weekends). They are planning 
 ---
 
 ## Stage 2 — Benchmark curation v1
-**Goal**: 50 questions with reference SQL, reference answers, and tags. This is the *hardest* and *most valuable* stage. Do not rush it.
+**Goal**: ~25 questions with reference SQL, reference answers, and tags. Quality over quantity — each question must be defensible ("why is this interesting, what capability does it probe, what failure mode does it expose?"). 50 is a stretch goal revisited after Stage 4 ships.
 
 **Acceptance**:
-- `benchmark/v1/questions.yaml` (or similar) with 50 entries.
-- Each entry has: question text (English), reference SQL, reference answer, difficulty tier, capability tags.
+- `benchmark/v1/questions.yaml` (or similar) with ~25 entries.
+- Each entry has: question text (English), reference SQL, reference answer, difficulty (integer 1–5), capability tags.
 
 **Two orthogonal axes** — keep them separate:
 
-- **Difficulty tier** (one of five buckets, single-valued):
-  1. **Lookup**: "How many bus stops are in Haifa?"
-  2. **Aggregate**: "What is the median service frequency on line 5 between 7–9am?"
-  3. **Relational join**: "Which operators run the most trips that end at rail stations?"
-  4. **Spatial**: "Which neighborhoods have no bus stop within 300m?"
-  5. **Multi-step reasoning**: "If line 142 were cancelled, how many trips per day would lose their only direct connection to a light-rail station?"
+- **Difficulty** (integer 1–5, single-valued, measures SQL complexity):
+  1. **Lookup**: single-table filter/count. "How many bus stops are in Haifa?"
+  2. **Aggregate**: grouping, window functions. "What is the median service frequency on line 5 between 7–9am?"
+  3. **Multi-table join**: 2+ joins, set reasoning. "Which operators run the most trips that end at rail stations?"
+  4. **Complex reasoning**: subqueries, CTEs, multi-step logic. "Which neighborhoods have no bus stop within 300m?"
+  5. **Multi-step with domain knowledge**: requires understanding GTFS semantics, transfer logic, or projection behavior. "If line 142 were cancelled, how many trips per day would lose their only direct connection to a light-rail station?"
 - **Capability tags** (multi-valued, what the question *probes*):
   `spatial_join`, `projection_aware`, `temporal_filter`, `set_reasoning`, `walking_transfer`,
-  `null_handling`, `ambiguity_resolution`. A single Spatial-tier question can carry several tags.
+  `null_handling`, `ambiguity_resolution`. Spatial capabilities are tags, not a difficulty bucket — a spatial question can be difficulty 2 or difficulty 5 depending on SQL complexity.
 
 The `q1`..`q5` *seed query shapes* in `transitsqlbench/queries/reference.py` are not the same
-thing as difficulty tiers — they are five concrete query templates the benchmark questions are
+thing as difficulty levels — they are five concrete query templates the benchmark questions are
 drawn from. Do not conflate the two vocabularies in the question file.
 
 **Scope boundary**:
