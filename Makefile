@@ -1,4 +1,4 @@
-.PHONY: data fetch fetch-update load queries test lint typecheck check
+.PHONY: data fetch fetch-update load queries test lint typecheck check validate
 
 fetch:
 	uv run python -m transitsqlbench.data.fetch
@@ -26,5 +26,8 @@ lint:
 
 typecheck:
 	uv run mypy transitsqlbench tests
+
+validate:
+	uv run python -m transitsqlbench.benchmark.schema benchmark/v1/questions.yaml
 
 check: lint typecheck test

@@ -8,9 +8,10 @@ question would, for instance, omit `geom_itm` (EPSG:2039) and use the lat/lon
 `geom` column for meter-based ST_DWithin, which is wrong by ~111 km/degree.
 
 Naming convention: `qN_*` and `QNResult`. Each `qN` is a *seed query shape*,
-not a difficulty tier. The benchmark's difficulty tiers (Lookup / Aggregate /
-Relational / Spatial / Multi-step) are an orthogonal axis defined in the
-Stage 2 question schema.
+not a difficulty level. The benchmark's difficulty axis (1-5: Lookup /
+Aggregate / Multi-table join / Complex reasoning / Multi-step with domain
+knowledge) and capability tags are orthogonal axes defined in the Stage 2
+question schema.
 """
 
 from typing import Final

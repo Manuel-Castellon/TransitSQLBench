@@ -72,11 +72,11 @@ drawn from. Do not conflate the two vocabularies in the question file.
 - Do not drift into generic visual/spatial cognition; SpatialEval and SpatialBench already cover that neighborhood.
 - Do not duplicate TransitGPT's core claim that LLMs can answer GTFS questions by generating Python. Our benchmark should isolate SQL-agent behavior, spatial SQL semantics, and regression detection.
 
-**Key decisions**:
-- Schema for the question file (versioning matters — benchmark will evolve).
-- How to encode "reference answer" when the answer is a list or a chart, not a scalar.
-- How to handle ambiguous questions — do we have a "multiple acceptable answers" field?
-- Hebrew variants? Probably defer to v2.
+**Key decisions** (all resolved):
+- **Question file schema** (decided 2026-04-29): `schema_version` (top-level), per-question fields: `id`, `text`, `difficulty`, `tags`, `seed_shape` (optional, q1..q5), `answer_type` (scalar | list | set), `reference_sql`, `reference_answer` (`value` for scalars/small results; `count` + `sample` for large sets), `notes` (interpretation guidance for grader, not shown to agent).
+- **Reference answer encoding**: scalar/small list stored directly as `value`. Large result sets stored as summary (`count` + `sample`); the reference SQL is the source of truth and Stage 4's grader re-runs it for exact comparison.
+- **Ambiguity handling**: tighten every question until exactly one answer is correct. No `acceptable_alternatives` field — 25 author-controlled questions can each be made unambiguous. The `notes` field carries interpretation constraints (e.g., "Haifa means stop_name contains חיפה"). Semantic answer extraction (LLM never returns just a bare number) is Stage 4's LLM-judge responsibility, not a Stage 2 schema concern.
+- **Hebrew variants**: deferred to v2.
 
 **Deferred**: grading logic (Stage 4); question-writing tools; crowd sourcing.
 
